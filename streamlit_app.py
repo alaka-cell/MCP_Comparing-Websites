@@ -2,8 +2,8 @@ import streamlit as st
 import requests
 import random
 
+# === Constants ===
 SUGGESTIONS = ["shoes", "tshirt", "jeans", "kurta", "jacket", "bag", "dress", "watch"]
-
 FORTUNES = [
     "🧧 A great deal is just a click away!",
     "💡 Your next search might surprise you!",
@@ -13,11 +13,53 @@ FORTUNES = [
     "🛒 Shopping karma is on your side today!",
 ]
 
+# === Configuration ===
+API_URL = "http://localhost:8000/compare"
+SERPER_API = True
+USE_LLM = True
+
+# === Page Setup ===
 st.set_page_config(page_title="Product Match Comparator", layout="wide")
 st.title("🛍️ Product Match Comparator")
 
-kw = st.text_input("Enter product keyword:", placeholder="e.g., shoes, kurta, dress")
+# === Left Sidebar (Settings Panel) ===
+st.sidebar.header("⚙️ Settings & Environment")
 
+st.sidebar.markdown("#### 🔗 Backend URL:")
+st.sidebar.code(API_URL, language="bash")
+
+st.sidebar.markdown("#### 🧰 Tools Used:")
+st.sidebar.markdown(
+    """
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+        <img src="https://img.shields.io/badge/Python-3670A0?style=for-the-badge&logo=python&logoColor=white"/>
+        <img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white"/>
+        <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white"/>
+        <img src="https://img.shields.io/badge/Selenium-43B02A?style=for-the-badge&logo=selenium&logoColor=white"/>
+        <img src="https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logoColor=white"/>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.markdown("#### 🔍 Serper Search Enabled:")
+st.sidebar.success(str(SERPER_API))
+
+st.sidebar.markdown("#### 🧠 LLM Summary Enabled:")
+st.sidebar.success(str(USE_LLM))
+
+# === Autocomplete Input ===
+col1, col2 = st.columns([4, 1])
+
+with col1:
+    kw = st.text_input("Enter product keyword:", placeholder="e.g., shoes, kurta, dress", key="keyword_input")
+
+with col2:
+    suggestion = st.selectbox("🔍 Suggestions", options=[""] + SUGGESTIONS, index=0, key="suggestion_box")
+    if suggestion:
+        kw = suggestion
+
+# === Easter Eggs & Suggestions ===
 if not kw:
     st.markdown("💡 Try: " + ", ".join(random.sample(SUGGESTIONS, 3)))
 
@@ -43,11 +85,7 @@ elif st.button("Compare"):
         res = {}
         with st.spinner("🔍 Fetching comparison..."):
             try:
-                response = requests.post(
-                    "http://localhost:8000/compare",
-                    json={"keyword": kw},
-                    timeout=90
-                )
+                response = requests.post(API_URL, json={"keyword": kw}, timeout=90)
                 res = response.json()
 
                 if not isinstance(res, dict):
@@ -61,7 +99,7 @@ elif st.button("Compare"):
                 st.write(f"**Total Myntra items:** {res.get('myntra_total', 0)}")
                 st.write(f"**Total AJIO items:** {res.get('ajio_total', 0)}")
 
-                st.markdown("### 📝 Summary")
+                st.markdown("### 📝 What I think ?")
                 st.write(res.get("summary", "-"))
 
                 st.markdown("### 🛍️ Top 5 MYNTRA")
