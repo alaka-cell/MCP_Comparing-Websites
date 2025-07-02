@@ -11,6 +11,7 @@ from ollama import Client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from utils.logger import logger
+from rapidfuzz import process, fuzz
 
 load_dotenv()
 
@@ -39,9 +40,19 @@ class MCPClient:
         self.logger.info("Resources cleaned up successfully.")
 
     def calculate_match(self, names, keyword):
-        kw_tokens = keyword.lower().split()
-        matches = [n for n in names if any(tok in n.lower() for tok in kw_tokens)]
-        return round(len(matches) / len(names) * 100, 2) if names else 0.0
+        keyword = keyword.lower()
+        if not names:
+            return 0.0
+
+        results = process.extract(
+            query=keyword,
+            choices=names,
+            scorer=fuzz.partial_ratio,
+            score_cutoff=60
+        )
+
+        match_count = len(results)
+        return round((match_count / len(names)) * 100, 2)
 
     def get_serper_info(self, keyword: str):
         try:
@@ -66,7 +77,7 @@ class MCPClient:
                 f"Compare top products for '{keyword}' from Myntra and AJIO.\n"
                 f"Myntra: {[p['name'] for p in myntra]}\n"
                 f"AJIO: {[p['name'] for p in ajio]}\n"
-                "Summarize the key differences in 2-3 lines."
+                "Summarize the key differences in 1-2 lines."
             )
             start = time.time()
             result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
@@ -82,8 +93,9 @@ class MCPClient:
                 ["python", "tools/scraper.py", keyword],
                 capture_output=True,
                 text=True,
-                timeout=45
+                timeout=20
             )
+
             if result.stderr:
                 self.logger.warning(f"[SCRAPER STDERR] {result.stderr.strip()}")
             return json.loads(result.stdout.strip())
