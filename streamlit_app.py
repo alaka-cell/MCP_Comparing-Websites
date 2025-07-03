@@ -1,122 +1,104 @@
 import streamlit as st
 import requests
 import random
+from utils.logger import logger
+from mcp_client import MCPClient
 
-# === Constants ===
-SUGGESTIONS = ["shoes", "tshirt", "jeans", "kurta", "jacket", "bag", "dress", "watch"]
+st.set_page_config(page_title="🛍️ Product Comparator", layout="wide")
+
+# UI Styling
+st.markdown("""
+    <style>
+        .main { padding: 1rem 2rem; }
+        footer {visibility: hidden;}
+        h1, h2, h3 { color: #3B3B98; }
+        .block-container { padding-top: 1.5rem; }
+    </style>
+""", unsafe_allow_html=True)
+
+SUGGESTIONS = ["shoes", "tshirt", "jeans", "kurta", "jacket", "bag", "blush", "moisturizer"]
 FORTUNES = [
     "🧧 A great deal is just a click away!",
     "💡 Your next search might surprise you!",
-    "✨ Today’s click might bring the perfect pick!",
-    "📦 You will discover something stylish and unexpected.",
-    "🎁 Don’t wait—your dream product awaits!",
-    "🛒 Shopping karma is on your side today!",
+    "✨ Today’s click might bring the trendiest find!",
+    "🛍️ Keep calm and keep shopping!"
 ]
 
-# === Configuration ===
-API_URL = "http://localhost:8000/compare"
-SERPER_API = True
-USE_LLM = True
+if "client" not in st.session_state:
+    st.session_state.client = MCPClient()
 
-# === Page Setup ===
-st.set_page_config(page_title="Product Match Comparator", layout="wide")
-st.title("🛍️ Product Match Comparator")
+if "input_query" not in st.session_state:
+    st.session_state.input_query = random.choice(SUGGESTIONS)
 
-# === Left Sidebar (Settings Panel) ===
-st.sidebar.header("⚙️ Settings & Environment")
+st.title("🛒 Myntra vs AJIO: Product Comparator")
+st.caption(random.choice(FORTUNES))
 
-st.sidebar.markdown("#### 🔗 Backend URL:")
-st.sidebar.code(API_URL, language="bash")
+query = st.text_input("Search for a product", key="input_query", help="Type a keyword like 'shoes', 'blush', etc")
+search = st.button("🔍 Compare")
 
-st.sidebar.markdown("#### 🧰 Tools Used:")
-st.sidebar.markdown(
-    """
-    <div style="display: flex; flex-direction: column; gap: 8px;">
-        <img src="https://img.shields.io/badge/Python-3670A0?style=for-the-badge&logo=python&logoColor=white"/>
-        <img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white"/>
-        <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white"/>
-        <img src="https://img.shields.io/badge/Selenium-43B02A?style=for-the-badge&logo=selenium&logoColor=white"/>
-        <img src="https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logoColor=white"/>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+cleaned_query = query.strip()
 
-st.sidebar.markdown("#### 🔍 Serper Search Enabled:")
-st.sidebar.success(str(SERPER_API))
+if search and cleaned_query:
+    with st.spinner("Scraping websites & analyzing matches..."):
+        res = st.session_state.client.compare_sites(cleaned_query)
 
-st.sidebar.markdown("#### 🧠 LLM Summary Enabled:")
-st.sidebar.success(str(USE_LLM))
+    st.markdown(f"## 📊 Results for **'{cleaned_query}'**")
 
-# === Autocomplete Input ===
-col1, col2 = st.columns([4, 1])
+    col1, col2 = st.columns(2)
+    col1.metric("🧮 Myntra Matches", f"{res['myntra_match']}%", delta=f"Total: {res['myntra_total']}")
+    col2.metric("🧮 AJIO Matches", f"{res['ajio_match']}%", delta=f"Total: {res['ajio_total']}")
 
-with col1:
-    kw = st.text_input("Enter product keyword:", placeholder="e.g., shoes, kurta, dress", key="keyword_input")
+    st.markdown("### 📝 Summary")
+    st.success(res.get("summary", "-"))
 
-with col2:
-    suggestion = st.selectbox("🔍 Suggestions", options=[""] + SUGGESTIONS, index=0, key="suggestion_box")
-    if suggestion:
-        kw = suggestion
+    def clean_price(p):
+        return str(p).replace("Rs.", "₹").replace("INR", "₹") if p else "-"
 
-# === Easter Eggs & Suggestions ===
-if not kw:
-    st.markdown("💡 Try: " + ", ".join(random.sample(SUGGESTIONS, 3)))
+    def show_product_grid(products, title):
+        st.markdown(f"### 🛍️ {title}")
+        cols = st.columns(5)
+        for i, p in enumerate(products):
+            with cols[i % 5]:
+                st.markdown(f"""
+                <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:360px;">
+                    <img src="{p.get('image', '')}" style="width:100%; height:160px; object-fit:contain; border-radius:10px;" />
+                    <h5 style="margin-top:10px;">{p.get('brand', '-')}</h5>
+                    <p style="font-size:13px; height:40px; overflow:hidden;">{p.get('name', '-')}</p>
+                    <p><strong>💸 {clean_price(p.get('price'))}</strong></p>
+                    <a href="{p.get('link', '#')}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View Product</a>
+                </div>
+                """, unsafe_allow_html=True)
 
-if kw.strip().lower() == "meowmode":
-    st.balloons()
-    st.markdown("## 🐾 Secret Mode Activated: Meow Mode!")
-    st.markdown("### You found the hidden cat cave 🎉")
-    st.markdown(
-        f'<div style="text-align:center;"><img src="https://custom-doodle.com/wp-content/uploads/doodle/auto-draft/kawaii-white-cat-shaking-head-doodle.gif" width="180"/></div>',
-        unsafe_allow_html=True
-    )
-    st.markdown("> _Here’s your lucky dancing cat blessing for the day!_ 😸")
+    show_product_grid(res.get("top_myntra", []), "Top Products from Myntra")
+    show_product_grid(res.get("top_ajio", []), "Top Products from AJIO")
 
-elif kw.strip().lower() == "fortunemode":
-    st.markdown("## 🥠 Fortune Cookie Mode")
-    st.markdown("✨ Here's your digital fortune:")
-    st.success(random.choice(FORTUNES))
-
-elif st.button("Compare"):
-    if not kw.strip():
-        st.warning("Please enter a keyword.")
+    matched = res.get("matched_products", [])
+    if matched:
+        st.markdown("### 🔁 Matching Products on Both Sites")
+        for pair in matched:
+            m = pair.get("myntra", {})
+            a = pair.get("ajio", {})
+            cols = st.columns(2)
+            for idx, p in enumerate([m, a]):
+                with cols[idx]:
+                    st.markdown(f"""
+                    <div style="border:1px solid #ddd; border-radius:12px; padding:10px; text-align:center; height:360px;">
+                        <img src="{p.get("image", "")}" style="width:100%; height:160px; object-fit:contain; border-radius:10px;" />
+                        <h5 style="margin-top:10px;">{p.get("brand", "-")}</h5>
+                        <p style="font-size:13px; height:40px; overflow:hidden;">{p.get("name", "-")}</p>
+                        <p><strong>💸 {clean_price(p.get("price"))}</strong></p>
+                        <a href="{p.get("link", "#")}" target="_blank" style="font-size:12px; color:#007BFF;">
+                        🔗 View on {'Myntra' if idx == 0 else 'AJIO'}</a>
+                    </div>
+                    """, unsafe_allow_html=True)
+            st.markdown("---")
     else:
-        res = {}
-        with st.spinner("🔍 Fetching comparison..."):
-            try:
-                response = requests.post(API_URL, json={"keyword": kw}, timeout=90)
-                res = response.json()
+        st.info("No matching products found between Myntra and AJIO.")
 
-                if not isinstance(res, dict):
-                    st.error("Unexpected response format from server.")
-                    st.stop()
+    st.markdown("### 🔎 Related Google Search Results")
+    for item in res.get("serper_links", []):
+        st.markdown(f"[🔗 {item['title']}]({item['link']})")
 
-                st.success("Comparison Results")
-
-                st.metric("Myntra Match %", f"{res.get('myntra_match', 0)}%")
-                st.metric("AJIO Match %", f"{res.get('ajio_match', 0)}%")
-                st.write(f"**Total Myntra items:** {res.get('myntra_total', 0)}")
-                st.write(f"**Total AJIO items:** {res.get('ajio_total', 0)}")
-
-                st.markdown("### 📝 What I think ?")
-                st.write(res.get("summary", "-"))
-
-                st.markdown("### 🛍️ Top 5 MYNTRA")
-                for p in res.get("top_myntra", []):
-                    st.markdown(f"- [{p.get('name', 'N/A')}]({p.get('link', '#')}) — **{p.get('price', '-')}**")
-
-                st.markdown("### 👗 Top 5 AJIO")
-                for p in res.get("top_ajio", []):
-                    st.markdown(f"- [{p.get('name', 'N/A')}]({p.get('link', '#')}) — **{p.get('price', '-')}**")
-
-                st.markdown("### 🔗 Google Search Results")
-                for link in res.get("serper_links", []):
-                    st.markdown(f"- [{link.get('title', 'Untitled')}]({link.get('link', '#')})")
-
-            except requests.exceptions.Timeout:
-                st.error("The server took too long to respond (timeout). Try again later.")
-            except Exception as e:
-                st.error("API error: " + str(e))
-                if isinstance(res, dict) and "response" in res:
-                    st.warning(res["response"])
+    with st.expander("💡 Suggestions", expanded=False):
+        st.markdown("Try searching for one of these popular items:")
+        st.write(", ".join(SUGGESTIONS))
