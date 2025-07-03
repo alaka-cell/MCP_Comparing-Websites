@@ -1,21 +1,21 @@
-Product Comparator
+## Product Comparator
 
 A fast and intelligent product comparison tool that scrapes Myntra and AJIO for real-time product results based on a search keyword. Built using the MCP architecture with support from LLMs (via Ollama), this project compares product matches, highlights overlap, and summarizes key differences.
 
 ---
 
-## 🚀 Features
+## Features
 
-- 🔍 Search any fashion product (e.g., "Nike shoes", "kurta", "bags")
-- ⚖️ Match percentage calculation using fuzzy logic and normalization
-- 🧠 LLM-powered summaries with Ollama (Mistral)
-- 🌐 Google Serper integration for top 5 relevant links
-- 📊 Comparison of matched items between Myntra and AJIO
-- 🎨 Streamlit UI with dark mode, autocomplete & fun "fortune" mode
+- Search any fashion product (e.g., "Nike shoes", "kurta", "bags")
+- Match percentage calculation using fuzzy logic and normalization
+- LLM-powered summaries with Ollama (Mistral)
+- Google Serper integration for top 5 relevant links
+- Comparison of matched items between Myntra and AJIO
+- Streamlit UI with dark mode, autocomplete & fun "fortune" mode
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Python 3.10+**
 - **Streamlit** – frontend UI
@@ -27,7 +27,7 @@ A fast and intelligent product comparison tool that scrapes Myntra and AJIO for 
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 # 1. Clone the repo
