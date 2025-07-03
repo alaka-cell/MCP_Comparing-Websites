@@ -9,6 +9,7 @@ import logging
 import asyncio
 
 load_dotenv()
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -20,9 +21,10 @@ settings = Settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🔌 Starting up and connecting to MCP server...")
-    client = MCPClient()
 
+    client = MCPClient()
     ok = await client.connect_to_server(settings.server_script_path)
+
     if not ok:
         logger.error("Failed to connect to MCP server.")
         raise RuntimeError("Could not connect to MCP server during startup.")
@@ -30,16 +32,17 @@ async def lifespan(app: FastAPI):
     async def warmup_model():
         try:
             logger.info("Warming up Mistral model...")
-            client.llm.generate(model="mistral", prompt="hello", stream=False)
-            logger.info("Mistral warm-up completed.")
+            result = await client.llm.generate(model="mistral", prompt="hello", stream=False)
+            logger.info("✅ Mistral warm-up completed.")
         except Exception as e:
             logger.warning(f"Mistral warm-up skipped or failed: {e}")
 
-    await asyncio.to_thread(warmup_model)
+    await warmup_model()
 
     app.state.client = client
     yield
-    logger.info("Cleaning up MCP resources...")
+
+    logger.info("🧹 Cleaning up MCP resources...")
     await client.cleanup()
     logger.info("🔌 Shutdown complete.")
 
