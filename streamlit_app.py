@@ -33,7 +33,7 @@ if "input_query" not in st.session_state:
 st.title("🛒 Myntra vs AJIO: Product Comparator")
 st.caption(random.choice(FORTUNES))
 
-query = st.text_input("Search for a product", key="input_query", help="Type a keyword like 'shoes', 'blush', etc")
+query = st.text_input("Search for a product", key="input_query", help="Type a keyword like 'Shoes', 'Blush', etc")
 search = st.button("🔍 Compare")
 
 cleaned_query = query.strip()
@@ -44,6 +44,19 @@ if search and cleaned_query:
 
     st.markdown(f"## 📊 Results for **'{cleaned_query}'**")
 
+    # Match % Gauge Bars (only one section retained)
+    st.subheader("📊 Match Percentage")
+    colg1, colg2 = st.columns(2)
+    with colg1:
+        st.markdown("**Myntra Match %**")
+        st.progress(res["myntra_match"] / 100)
+        st.caption(f"🔢 Total products: {res['myntra_total']}")
+    with colg2:
+        st.markdown("**AJIO Match %**")
+        st.progress(res["ajio_match"] / 100)
+        st.caption(f"🔢 Total products: {res['ajio_total']}")
+
+    # Metric Display
     col1, col2 = st.columns(2)
     col1.metric("🧮 Myntra Matches", f"{res['myntra_match']}%", delta=f"Total: {res['myntra_total']}")
     col2.metric("🧮 AJIO Matches", f"{res['ajio_match']}%", delta=f"Total: {res['ajio_total']}")
