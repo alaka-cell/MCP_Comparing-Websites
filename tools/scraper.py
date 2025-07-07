@@ -41,6 +41,9 @@ def required_website():
 def other_required_website():
     ...
 
+def n_required_website():
+    ...
+
 if __name__ == "__main__":
         args 
 
