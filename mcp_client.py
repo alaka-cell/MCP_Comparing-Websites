@@ -1,8 +1,4 @@
-import os
-import json
-import time
-import traceback
-import subprocess
+import os, json, time, traceback, subprocess
 from typing import Optional
 from contextlib import AsyncExitStack
 from dotenv import load_dotenv
@@ -55,16 +51,10 @@ class MCPClient:
         try:
             if not names or not keyword:
                 return 0.0
-
             keyword_norm = normalize_name(keyword).lower()
             match_count = 0
-
-            self.logger.info(f"[MATCH DEBUG] Keyword Norm: '{keyword_norm}'")
-
             for name in names:
                 norm_name = normalize_name(name).lower()
-                self.logger.info(f"[MATCH DEBUG] Checking: '{norm_name}'")
-
                 if keyword_norm in norm_name:
                     match_count += 1
                 elif len(keyword_norm) <= 6:
@@ -73,17 +63,12 @@ class MCPClient:
                 else:
                     if SequenceMatcher(None, keyword_norm, norm_name).ratio() > 0.5:
                         match_count += 1
-
-            self.logger.info(f"[MATCH DEBUG] Total Matches: {match_count} out of {len(names)}")
-
-            match_percent = (match_count / len(names)) * 100 if names else 0
-            return round(match_percent, 2)
-
+            return round((match_count / len(names)) * 100, 2)
         except Exception as e:
             self.logger.error("Match calculation failed: " + str(e))
             return 0.0
 
-    def is_similar(self, a: str, b: str, threshold: float = 0.7) -> bool:
+    def is_similar(self, a: str, b: str, threshold: float = 0.5) -> bool:
         return SequenceMatcher(None, normalize_name(a), normalize_name(b)).ratio() >= threshold
 
     def dedupe(self, products: list[dict], limit: int = 5) -> list:
@@ -108,17 +93,27 @@ class MCPClient:
             )
             if result.stderr:
                 self.logger.warning(f"[SCRAPER STDERR] {result.stderr.strip()}")
-            return json.loads(result.stdout.strip())
+
+            raw_output = result.stdout.strip()
+            self.logger.info(f"[SCRAPER RAW OUTPUT] {raw_output}")
+
+            if not raw_output.startswith("{"):
+                self.logger.error("[SCRAPER ERROR] Output not JSON: " + raw_output)
+                return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
+
+            return json.loads(raw_output)
         except Exception as e:
             self.logger.error("Scraper error: " + str(e))
-            return {"myntra": [], "ajio": []}
+            return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
 
-    def generate_summary(self, keyword: str, myntra: list, ajio: list) -> str:
+    def generate_summary(self, keyword: str, myntra: list, ajio: list, nykaa: list, amazon: list) -> str:
         try:
             prompt = (
-                f"Compare top products for '{keyword}' from Myntra and AJIO.\n"
+                f"Compare top products for '{keyword}' from Myntra, AJIO, Nykaa and Amazon.\n"
                 f"Myntra: {[p['name'] for p in myntra]}\n"
                 f"AJIO: {[p['name'] for p in ajio]}\n"
+                f"Nykaa: {[p['name'] for p in nykaa]}\n"
+                f"Amazon: {[p['name'] for p in amazon]}\n"
                 "Summarize the key differences in 1-2 lines."
             )
             result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
@@ -139,13 +134,30 @@ class MCPClient:
             self.logger.error("Serper error: " + str(e))
             return []
 
-    def match_products_across_sites(self, myntra, ajio):
+    def match_products_across_sites(self, myntra, ajio, nykaa, amazon):
         matched = []
-        for m in myntra:
-            for a in ajio:
-                if self.is_similar(m.get("name", ""), a.get("name", "")):
-                    matched.append({"myntra": m, "ajio": a})
-                    break
+        all_products = []
+
+        for site, products in [("myntra", myntra), ("ajio", ajio), ("nykaa", nykaa), ("amazon", amazon)]:
+            for p in products:
+                p["source"] = site
+                all_products.append(p)
+
+        seen = set()
+        for i, p1 in enumerate(all_products):
+            if i in seen or not p1.get("name"):
+                continue
+            group = {"myntra": None, "ajio": None, "nykaa": None, "amazon": None}
+            group[p1["source"]] = p1
+            seen.add(i)
+            for j, p2 in enumerate(all_products[i + 1:], start=i + 1):
+                if j in seen or not p2.get("name"):
+                    continue
+                if self.is_similar(p1["name"], p2["name"]):
+                    group[p2["source"]] = p2
+                    seen.add(j)
+            if sum(1 for v in group.values() if v) >= 2:
+                matched.append(group)
         return matched
 
     def compare_sites(self, keyword: str) -> dict:
@@ -154,52 +166,57 @@ class MCPClient:
             raw = self.scrape_combined_subprocess(keyword)
             scrape_time = round(time.time() - start_scrape, 2)
             self.logger.info(f"[TIMER] Scraper took {scrape_time}s")
+
             myntra = raw.get("myntra", [])
             ajio = raw.get("ajio", [])
+            nykaa = raw.get("nykaa", [])
+            amazon = raw.get("amazon", [])
         except Exception as e:
             self.logger.error("Scraping failed: " + str(e))
-            myntra, ajio = [], []
+            myntra = ajio = nykaa = amazon = []
             scrape_time = 0.0
 
-        # ✅ Use brand + name for accurate match detection
         myntra_names = [f"{p.get('brand', '')} {p.get('name', '')}".strip() for p in myntra if p.get("name")]
         ajio_names = [f"{p.get('brand', '')} {p.get('name', '')}".strip() for p in ajio if p.get("name")]
+        nykaa_names = [f"{p.get('brand', '')} {p.get('name', '')}".strip() for p in nykaa if p.get("name")]
+        amazon_names = [f"{p.get('brand', '')} {p.get('name', '')}".strip() for p in amazon if p.get("name")]
 
         start_match = time.time()
         myntra_match = self.calculate_match(myntra_names, keyword)
         ajio_match = self.calculate_match(ajio_names, keyword)
+        nykaa_match = self.calculate_match(nykaa_names, keyword)
+        amazon_match = self.calculate_match(amazon_names, keyword)
         match_time = round(time.time() - start_match, 2)
         self.logger.info(f"[TIMER] Match calculation took {match_time}s")
 
         start_summary = time.time()
-        summary = self.generate_summary(keyword, myntra[:5], ajio[:5])
+        summary = self.generate_summary(keyword, myntra[:3], ajio[:3], nykaa[:3], amazon[:3])
         summary_time = round(time.time() - start_summary, 1)
         self.logger.info(f"[TIMER] Summary generation took {summary_time}s")
 
         start_serper = time.time()
-        serper = self.get_serper_info(f"{keyword} site:myntra.com OR site:ajio.com")
+        serper = self.get_serper_info(f"{keyword} site:myntra.com OR site:ajio.com OR site:nykaa.com OR site:amazon.in")
         serper_time = round(time.time() - start_serper, 2)
         self.logger.info(f"[TIMER] Serper search took {serper_time}s")
 
-        matched = self.match_products_across_sites(myntra, ajio)
+        matched = self.match_products_across_sites(myntra, ajio, nykaa, amazon)
 
         return {
-            "keyword": keyword,
             "myntra_match": myntra_match,
             "ajio_match": ajio_match,
+            "nykaa_match": nykaa_match,
+            "amazon_match": amazon_match,
             "myntra_total": len(myntra),
             "ajio_total": len(ajio),
-            "top_myntra": self.dedupe(myntra),
-            "top_ajio": self.dedupe(ajio),
-            "matched_products": matched,
+            "nykaa_total": len(nykaa),
+            "amazon_total": len(amazon),
             "summary": summary,
+            "matched_products": matched,
             "serper_links": serper,
-            "timing": {
-                "scraper": scrape_time,
-                "match_calc": match_time,
-                "summary": summary_time,
-                "serper": serper_time
-            }
+            "top_myntra": myntra[:5],
+            "top_ajio": ajio[:5],
+            "top_nykaa": nykaa[:5],
+            "top_amazon": amazon[:5]
         }
 
     async def process_query(self, query: str):
