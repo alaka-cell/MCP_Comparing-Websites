@@ -7,7 +7,7 @@ from ollama import Client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from utils.logger import logger
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, get_close_matches
 
 load_dotenv()
 
@@ -89,7 +89,7 @@ class MCPClient:
                 ["python", "tools/scraper.py", keyword],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=20
             )
             if result.stderr:
                 self.logger.warning(f"[SCRAPER STDERR] {result.stderr.strip()}")
@@ -102,6 +102,9 @@ class MCPClient:
                 return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
 
             return json.loads(raw_output)
+        except subprocess.TimeoutExpired:
+            self.logger.error("[SCRAPER TIMEOUT] Scraper took too long.")
+            return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
         except Exception as e:
             self.logger.error("Scraper error: " + str(e))
             return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
@@ -114,10 +117,14 @@ class MCPClient:
                 f"AJIO: {[p['name'] for p in ajio]}\n"
                 f"Nykaa: {[p['name'] for p in nykaa]}\n"
                 f"Amazon: {[p['name'] for p in amazon]}\n"
-                "Summarize the key differences in 1-2 lines."
+                "Summarize the output in 70 words."
             )
-            result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
-            return result.get("response", "No response.")
+            try:
+                result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
+                return result.get("response", "No response.")
+            except Exception as llm_error:
+                self.logger.warning(f"[LLM ERROR] Fallback triggered: {llm_error}")
+                return "Summary temporarily unavailable."
         except Exception as e:
             self.logger.error("Summary error: " + str(e))
             return "Summary unavailable."
@@ -140,24 +147,49 @@ class MCPClient:
 
         for site, products in [("myntra", myntra), ("ajio", ajio), ("nykaa", nykaa), ("amazon", amazon)]:
             for p in products:
+                if not p.get("name"):
+                    continue
                 p["source"] = site
+                brand = p.get("brand", "").strip().lower()
+                name = p.get("name", "").strip().lower()
+                full_name = f"{brand} {name}".strip()
+                p["normalized"] = normalize_name(full_name)
+                p["brand_normalized"] = brand
                 all_products.append(p)
 
         seen = set()
         for i, p1 in enumerate(all_products):
-            if i in seen or not p1.get("name"):
+            if i in seen:
                 continue
+
             group = {"myntra": None, "ajio": None, "nykaa": None, "amazon": None}
             group[p1["source"]] = p1
             seen.add(i)
-            for j, p2 in enumerate(all_products[i + 1:], start=i + 1):
-                if j in seen or not p2.get("name"):
+
+            for j in range(i + 1, len(all_products)):
+                p2 = all_products[j]
+                if j in seen:
                     continue
-                if self.is_similar(p1["name"], p2["name"]):
+
+                if p1["brand_normalized"] != p2["brand_normalized"]:
+                    continue
+
+                name1 = p1["normalized"]
+                name2 = p2["normalized"]
+                sim = SequenceMatcher(None, name1, name2).ratio()
+                fuzzy = get_close_matches(name2, [name1], cutoff=0.75)
+
+                tokens1 = set(name1.split())
+                tokens2 = set(name2.split())
+                token_overlap = len(tokens1.intersection(tokens2)) >= 3
+
+                if sim >= 0.7 or fuzzy or token_overlap:
                     group[p2["source"]] = p2
                     seen.add(j)
+
             if sum(1 for v in group.values() if v) >= 2:
                 matched.append(group)
+
         return matched
 
     def compare_sites(self, keyword: str) -> dict:
