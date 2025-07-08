@@ -85,25 +85,32 @@ class MCPClient:
 
     def scrape_combined_subprocess(self, keyword: str) -> dict:
         try:
+            env = os.environ.copy()
             result = subprocess.run(
                 ["python", "tools/scraper.py", keyword],
                 capture_output=True,
                 text=True,
-                timeout=20
+                timeout=30,
+                env=env
             )
             if result.stderr:
                 self.logger.warning(f"[SCRAPER STDERR] {result.stderr.strip()}")
 
             raw_output = result.stdout.strip()
-            self.logger.info(f"[SCRAPER RAW OUTPUT] {raw_output}")
+            if not raw_output:
+                self.logger.error("[SCRAPER ERROR] No output received from scraper.")
+                return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
 
             if not raw_output.startswith("{"):
-                self.logger.error("[SCRAPER ERROR] Output not JSON: " + raw_output)
+                self.logger.error("[SCRAPER ERROR] Output not JSON: " + raw_output[:500])
                 return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
 
             return json.loads(raw_output)
         except subprocess.TimeoutExpired:
             self.logger.error("[SCRAPER TIMEOUT] Scraper took too long.")
+            return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
+        except json.JSONDecodeError as json_error:
+            self.logger.error(f"[SCRAPER JSON ERROR] Failed to decode JSON: {json_error}")
             return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
         except Exception as e:
             self.logger.error("Scraper error: " + str(e))
@@ -119,15 +126,11 @@ class MCPClient:
                 f"Amazon: {[p['name'] for p in amazon]}\n"
                 "Summarize the output in 70 words."
             )
-            try:
-                result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
-                return result.get("response", "No response.")
-            except Exception as llm_error:
-                self.logger.warning(f"[LLM ERROR] Fallback triggered: {llm_error}")
-                return "Summary temporarily unavailable."
+            result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
+            return result.get("response", "No response.")
         except Exception as e:
-            self.logger.error("Summary error: " + str(e))
-            return "Summary unavailable."
+            self.logger.warning(f"[LLM ERROR] Fallback triggered: {e}")
+            return "Summary temporarily unavailable."
 
     def get_serper_info(self, keyword: str):
         try:
@@ -170,7 +173,6 @@ class MCPClient:
                 p2 = all_products[j]
                 if j in seen:
                     continue
-
                 if p1["brand_normalized"] != p2["brand_normalized"]:
                     continue
 
@@ -178,7 +180,6 @@ class MCPClient:
                 name2 = p2["normalized"]
                 sim = SequenceMatcher(None, name1, name2).ratio()
                 fuzzy = get_close_matches(name2, [name1], cutoff=0.75)
-
                 tokens1 = set(name1.split())
                 tokens2 = set(name2.split())
                 token_overlap = len(tokens1.intersection(tokens2)) >= 3
