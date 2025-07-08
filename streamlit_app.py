@@ -2,9 +2,33 @@ import streamlit as st
 import random
 from utils.logger import logger
 from mcp_client import MCPClient
+from utils.wishlist_manager import load_wishlist, add_to_wishlist, remove_from_wishlist
 
 st.set_page_config(page_title="🛍️ Product Comparator", layout="wide")
 
+# 📌 Wishlist Sidebar
+with st.sidebar.expander("❤️ My Wishlist", expanded=True):
+    wishlist = load_wishlist()
+    if wishlist:
+        for item in wishlist:
+            col1, col2 = st.columns([0.9, 0.1])
+            with col1:
+                st.markdown(f"""
+                <div style="margin-bottom:10px;">
+                    <a href="{item['link']}" target="_blank" style="text-decoration:none; color:#3B3B98;">
+                        <strong>{item['name']}</strong>
+                    </a><br>
+                    💸 {item['price']}
+                </div>
+                """, unsafe_allow_html=True)
+            with col2:
+                if st.button("❌", key="remove_" + item['link']):
+                    remove_from_wishlist(item['link'])
+                    st.rerun()
+    else:
+        st.info("No items wishlisted yet.")
+
+# 🖼️ UI Styling
 st.markdown("""
     <style>
         .main { padding: 1rem 2rem; }
@@ -14,6 +38,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# 🔮 Constants
 SUGGESTIONS = ["shoes", "tshirt", "jeans", "kurta", "jacket", "bag", "blush", "moisturizer"]
 FORTUNES = [
     "💋 Your perfect shade is just a click away!",
@@ -26,21 +51,20 @@ FORTUNES = [
     "🌟 Slay the day with your next beauty buy!"
 ]
 
+# 🧠 Session Setup
 if "client" not in st.session_state:
     st.session_state.client = MCPClient()
-
-if "input_query" not in st.session_state:
-    st.session_state.input_query = random.choice(SUGGESTIONS)
 
 if "stored_result" not in st.session_state:
     st.session_state.stored_result = {}
 
+# 🎯 Header
 st.title("🛒 All things beauty comparator")
 st.caption(random.choice(FORTUNES))
 
-query = st.text_input("Search for a product", key="input_query", help="Type a keyword like 'Shoes', 'Blush', etc")
+# 🔍 Search Input
+query = st.text_input("Search for a product", value=st.session_state.get("input_query", random.choice(SUGGESTIONS)), key="input_query", help="Type a keyword like 'Shoes', 'Blush', etc")
 search = st.button("🔍 Compare")
-
 cleaned_query = query.strip()
 
 def clean_price(p):
@@ -50,24 +74,37 @@ def show_product_grid(products, title):
     if not products:
         st.info(f"No products to display for {title}.")
         return
+
+    wishlist_links = {item['link'] for item in load_wishlist()}
     st.markdown(f"### 🛍️ {title}")
-    cols = st.columns(5)
+    cols = st.columns(min(5, len(products)))
+
     for i, p in enumerate(products):
         rating = p.get("rating")
-        rating_display = f"⭐ {rating}" if rating else ""
-        with cols[i % 5]:
+        rating_display = f"⭐ {rating}" if rating is not None else ""
+        link_key = f"wishlist_{p['link']}"
+        is_wishlisted = p["link"] in wishlist_links
+        icon = "♥" if is_wishlisted else "♡"
+
+        with cols[i % len(cols)]:
             st.markdown(f"""
-            <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:390px;">
+            <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:440px; position:relative;">
                 <img src="{p.get('image', '')}" style="width:100%; height:160px; object-fit:contain; border-radius:10px;" />
                 <h5 style="margin-top:10px;">{p.get('brand', '-')}</h5>
                 <p style="font-size:13px; height:40px; overflow:hidden;">{p.get('name', '-')}</p>
                 <p><strong>💸 {clean_price(p.get('price'))}</strong></p>
                 <p style="font-size:13px;">{rating_display}</p>
-                <a href="{p.get('link', '#')}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View Product</a>
-            </div>
+                <a href="{p.get('link', '#')}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View Product</a><br><br>
             """, unsafe_allow_html=True)
+            if st.button(icon, key=link_key):
+                if is_wishlisted:
+                    remove_from_wishlist(p['link'])
+                else:
+                    add_to_wishlist(p)
+                    st.success("Saved to wishlist!")
+                st.rerun()
 
-# 🔍 Fetch results (summary always generated)
+# 🔍 Fetch results
 if search and cleaned_query:
     with st.spinner("Scraping websites & analyzing matches..."):
         try:
@@ -78,7 +115,7 @@ if search and cleaned_query:
             st.error("Something went wrong while fetching results.")
             st.stop()
 
-# 💡 Display results if available
+# 📊 Display Results
 if st.session_state.stored_result:
     res = st.session_state.stored_result
     st.markdown(f"## 📊 Results for **'{cleaned_query}'**")
@@ -95,7 +132,6 @@ if st.session_state.stored_result:
     col3.progress(res["nykaa_match"] / 100)
     col4.progress(res["amazon_match"] / 100)
 
-    # 📝 Always show summary
     st.markdown("### 📝 Summary")
     st.success(res.get("summary", "-"))
 
@@ -104,8 +140,10 @@ if st.session_state.stored_result:
     show_product_grid(res.get("top_nykaa", []), "Top Products from Nykaa")
     show_product_grid(res.get("top_amazon", []), "Top Products from Amazon")
 
+    # Matched Products
     matched = res.get("matched_products", [])
     if matched:
+        wishlist_links = {item['link'] for item in load_wishlist()}
         st.markdown("### 🔁 Matched Products Across Sites")
         for group in matched:
             cols = st.columns(4)
@@ -114,40 +152,35 @@ if st.session_state.stored_result:
                 with cols[idx]:
                     st.markdown(f"<h4 style='text-align:center;'>{site.capitalize()}</h4>", unsafe_allow_html=True)
                     if not product:
-                        st.markdown(
-                            """
-                            <div style='
-                                border: 1px dashed #555;
-                                border-radius: 12px;
-                                padding: 20px;
-                                text-align: center;
-                                color: #999;
-                                font-size: 16px;
-                                height: 390px;
-                                display: flex;
-                                flex-direction: column;
-                                justify-content: center;
-                                align-items: center;
-                            '>
-                                <span style='font-size: 36px;'>🔍</span>
-                                <em style='margin-top: 10px;'>No product found</em>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
+                        st.markdown("""
+                        <div style='border: 1px dashed #555; border-radius: 12px; padding: 20px; text-align: center; color: #999; font-size: 16px; height: 390px; display: flex; flex-direction: column; justify-content: center; align-items: center;'>
+                            <span style='font-size: 36px;'>🔍</span>
+                            <em style='margin-top: 10px;'>No product found</em>
+                        </div>
+                        """, unsafe_allow_html=True)
                     else:
                         rating = product.get("rating")
-                        rating_display = f"⭐ {rating}" if rating else ""
+                        rating_display = f"⭐ {rating}" if rating is not None else ""
+                        link_key = f"matchwishlist_{product['link']}"
+                        is_wishlisted = product["link"] in wishlist_links
+                        icon = "♥" if is_wishlisted else "♡"
+
                         st.markdown(f"""
-                        <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:390px;">
+                        <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:440px; position:relative;">
                             <img src="{product.get("image", "")}" style="width:100%; height:160px; object-fit:contain; border-radius:10px;" />
                             <h5 style="margin-top:10px;">{product.get("brand", "-")}</h5>
                             <p style="font-size:13px; height:40px; overflow:hidden;">{product.get("name", "-")}</p>
                             <p><strong>💸 {clean_price(product.get("price"))}</strong></p>
                             <p style="font-size:13px;">{rating_display}</p>
-                            <a href="{product.get("link", "#")}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View on {site.capitalize()}</a>
-                        </div>
+                            <a href="{product.get("link", "#")}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View on {site.capitalize()}</a><br><br>
                         """, unsafe_allow_html=True)
+                        if st.button(icon, key=link_key):
+                            if is_wishlisted:
+                                remove_from_wishlist(product['link'])
+                            else:
+                                add_to_wishlist(product)
+                                st.success("Saved to wishlist!")
+                            st.rerun()
     else:
         st.info("No matching products found across sites.")
 
