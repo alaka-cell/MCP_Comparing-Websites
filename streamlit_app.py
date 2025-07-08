@@ -16,10 +16,14 @@ st.markdown("""
 
 SUGGESTIONS = ["shoes", "tshirt", "jeans", "kurta", "jacket", "bag", "blush", "moisturizer"]
 FORTUNES = [
-    "🧧 A great deal is just a click away!",
-    "💡 Your next search might surprise you!",
-    "✨ Today’s click might bring the trendiest find!",
-    "🛍️ Keep calm and keep shopping!"
+    "💋 Your perfect shade is just a click away!",
+    "💄 One swipe could change your look forever!",
+    "✨ Today’s glam find might be hiding in plain sight!",
+    "🌸 Beauty begins the moment you start searching!",
+    "🔮 A glow-up is only one product away!",
+    "🧴 Self-care starts with the right pick!",
+    "🎯 Find your holy grail product today!",
+    "🌟 Slay the day with your next beauty buy!"
 ]
 
 if "client" not in st.session_state:
@@ -28,7 +32,10 @@ if "client" not in st.session_state:
 if "input_query" not in st.session_state:
     st.session_state.input_query = random.choice(SUGGESTIONS)
 
-st.title("🛒 Myntra vs AJIO vs Nykaa vs Amazon")
+if "stored_result" not in st.session_state:
+    st.session_state.stored_result = {}
+
+st.title("🛒 All things beauty comparator")
 st.caption(random.choice(FORTUNES))
 
 query = st.text_input("Search for a product", key="input_query", help="Type a keyword like 'Shoes', 'Blush', etc")
@@ -60,15 +67,20 @@ def show_product_grid(products, title):
             </div>
             """, unsafe_allow_html=True)
 
+# 🔍 Fetch results (summary always generated)
 if search and cleaned_query:
     with st.spinner("Scraping websites & analyzing matches..."):
         try:
             res = st.session_state.client.compare_sites(cleaned_query)
+            st.session_state.stored_result = res
         except Exception as e:
             logger.error("Error calling MCPClient.compare_sites(): " + str(e))
             st.error("Something went wrong while fetching results.")
             st.stop()
 
+# 💡 Display results if available
+if st.session_state.stored_result:
+    res = st.session_state.stored_result
     st.markdown(f"## 📊 Results for **'{cleaned_query}'**")
 
     st.subheader("📊 Match Percentage")
@@ -83,6 +95,7 @@ if search and cleaned_query:
     col3.progress(res["nykaa_match"] / 100)
     col4.progress(res["amazon_match"] / 100)
 
+    # 📝 Always show summary
     st.markdown("### 📝 Summary")
     st.success(res.get("summary", "-"))
 
@@ -101,20 +114,40 @@ if search and cleaned_query:
                 with cols[idx]:
                     st.markdown(f"<h4 style='text-align:center;'>{site.capitalize()}</h4>", unsafe_allow_html=True)
                     if not product:
-                        st.markdown("🚫 No match", unsafe_allow_html=True)
-                        continue
-                    rating = product.get("rating")
-                    rating_display = f"⭐ {rating}" if rating else ""
-                    st.markdown(f"""
-                    <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:390px;">
-                        <img src="{product.get("image", "")}" style="width:100%; height:160px; object-fit:contain; border-radius:10px;" />
-                        <h5 style="margin-top:10px;">{product.get("brand", "-")}</h5>
-                        <p style="font-size:13px; height:40px; overflow:hidden;">{product.get("name", "-")}</p>
-                        <p><strong>💸 {clean_price(product.get("price"))}</strong></p>
-                        <p style="font-size:13px;">{rating_display}</p>
-                        <a href="{product.get("link", "#")}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View on {site.capitalize()}</a>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        st.markdown(
+                            """
+                            <div style='
+                                border: 1px dashed #555;
+                                border-radius: 12px;
+                                padding: 20px;
+                                text-align: center;
+                                color: #999;
+                                font-size: 16px;
+                                height: 390px;
+                                display: flex;
+                                flex-direction: column;
+                                justify-content: center;
+                                align-items: center;
+                            '>
+                                <span style='font-size: 36px;'>🔍</span>
+                                <em style='margin-top: 10px;'>No product found</em>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        rating = product.get("rating")
+                        rating_display = f"⭐ {rating}" if rating else ""
+                        st.markdown(f"""
+                        <div style="border:1px solid #ccc; border-radius:12px; padding:10px; text-align:center; height:390px;">
+                            <img src="{product.get("image", "")}" style="width:100%; height:160px; object-fit:contain; border-radius:10px;" />
+                            <h5 style="margin-top:10px;">{product.get("brand", "-")}</h5>
+                            <p style="font-size:13px; height:40px; overflow:hidden;">{product.get("name", "-")}</p>
+                            <p><strong>💸 {clean_price(product.get("price"))}</strong></p>
+                            <p style="font-size:13px;">{rating_display}</p>
+                            <a href="{product.get("link", "#")}" target="_blank" style="font-size:12px; color:#007BFF;">🔗 View on {site.capitalize()}</a>
+                        </div>
+                        """, unsafe_allow_html=True)
     else:
         st.info("No matching products found across sites.")
 
