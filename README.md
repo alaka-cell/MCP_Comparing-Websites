@@ -1,16 +1,16 @@
 ## Product Comparator
 
-A fast and intelligent product comparison tool that scrapes Myntra and AJIO for real-time product results based on a search keyword. Built using the MCP architecture with support from LLMs (via Ollama), this project compares product matches, highlights overlap, and summarizes key differences.
+A fast and intelligent product comparison tool that scrapes **Myntra**, **AJIO**, **Nykaa**, and **Amazon** for real-time product results based on a search keyword. Built using the MCP architecture with support from LLMs (via Ollama), this project compares product matches, highlights overlap, and summarizes key differences.
 
 ---
 
 ## Features
 
-- Search any fashion product (e.g., "Nike shoes", "kurta", "bags")
+- Search any fashion or beauty product (e.g., "Nike shoes", "lipstick", "bags")
 - Match percentage calculation using fuzzy logic and normalization
 - LLM-powered summaries with Ollama (Mistral)
 - Google Serper integration for top 5 relevant links
-- Comparison of matched items between Myntra and AJIO
+- Comparison of matched items between Myntra, AJIO, Nykaa, and Amazon
 - Streamlit UI with dark mode, autocomplete & fun "fortune" mode
 
 ---
