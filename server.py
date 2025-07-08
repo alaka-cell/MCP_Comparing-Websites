@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
     async def warmup_model():
         try:
             logger.info("Warming up Mistral model...")
-            result = await client.llm.generate(model="mistral", prompt="hello", stream=False)
+            result = client.llm.generate(model="mistral", prompt="hello", stream=False)
             logger.info("✅ Mistral warm-up completed.")
         except Exception as e:
             logger.warning(f"Mistral warm-up skipped or failed: {e}")
