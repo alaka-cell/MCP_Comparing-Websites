@@ -47,42 +47,6 @@ class MCPClient:
         await self.exit_stack.aclose()
         self.logger.info("Resources cleaned up successfully.")
 
-    def calculate_match(self, names: list[str], keyword: str) -> float:
-        try:
-            if not names or not keyword:
-                return 0.0
-            keyword_norm = normalize_name(keyword).lower()
-            match_count = 0
-            for name in names:
-                norm_name = normalize_name(name).lower()
-                if keyword_norm in norm_name:
-                    match_count += 1
-                elif len(keyword_norm) <= 6:
-                    if keyword_norm in name.lower() or SequenceMatcher(None, keyword_norm, norm_name).ratio() > 0.4:
-                        match_count += 1
-                else:
-                    if SequenceMatcher(None, keyword_norm, norm_name).ratio() > 0.5:
-                        match_count += 1
-            return round((match_count / len(names)) * 100, 2)
-        except Exception as e:
-            self.logger.error("Match calculation failed: " + str(e))
-            return 0.0
-
-    def is_similar(self, a: str, b: str, threshold: float = 0.5) -> bool:
-        return SequenceMatcher(None, normalize_name(a), normalize_name(b)).ratio() >= threshold
-
-    def dedupe(self, products: list[dict], limit: int = 5) -> list:
-        seen = set()
-        unique = []
-        for p in products:
-            name = normalize_name(p.get("name", ""))
-            if name not in seen:
-                seen.add(name)
-                unique.append(p)
-            if len(unique) >= limit:
-                break
-        return unique
-
     def scrape_combined_subprocess(self, keyword: str) -> dict:
         try:
             env = os.environ.copy()
@@ -90,13 +54,13 @@ class MCPClient:
                 ["python", "tools/scraper.py", keyword],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=60,
                 env=env
             )
             if result.stderr:
                 self.logger.warning(f"[SCRAPER STDERR] {result.stderr.strip()}")
-
             raw_output = result.stdout.strip()
+
             if not raw_output:
                 self.logger.error("[SCRAPER ERROR] No output received from scraper.")
                 return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
@@ -109,40 +73,30 @@ class MCPClient:
         except subprocess.TimeoutExpired:
             self.logger.error("[SCRAPER TIMEOUT] Scraper took too long.")
             return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
-        except json.JSONDecodeError as json_error:
-            self.logger.error(f"[SCRAPER JSON ERROR] Failed to decode JSON: {json_error}")
-            return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
         except Exception as e:
             self.logger.error("Scraper error: " + str(e))
             return {"myntra": [], "ajio": [], "nykaa": [], "amazon": []}
 
-    def generate_summary(self, keyword: str, myntra: list, ajio: list, nykaa: list, amazon: list) -> str:
+    def calculate_match(self, names: list[str], keyword: str) -> float:
         try:
-            prompt = (
-                f"Compare top products for '{keyword}' from Myntra, AJIO, Nykaa and Amazon.\n"
-                f"Myntra: {[p['name'] for p in myntra]}\n"
-                f"AJIO: {[p['name'] for p in ajio]}\n"
-                f"Nykaa: {[p['name'] for p in nykaa]}\n"
-                f"Amazon: {[p['name'] for p in amazon]}\n"
-                "Summarize the output in 70 words."
-            )
-            result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
-            return result.get("response", "No response.")
+            if not names or not keyword:
+                return 0.0
+            keyword_norm = normalize_name(keyword).lower()
+            match_count = 0
+            for name in names:
+                norm_name = normalize_name(name).lower()
+                if keyword_norm in norm_name:
+                    match_count += 1
+                elif len(keyword_norm) <= 6:
+                    if keyword_norm in norm_name or SequenceMatcher(None, keyword_norm, norm_name).ratio() > 0.4:
+                        match_count += 1
+                else:
+                    if SequenceMatcher(None, keyword_norm, norm_name).ratio() > 0.5:
+                        match_count += 1
+            return round((match_count / len(names)) * 100, 2)
         except Exception as e:
-            self.logger.warning(f"[LLM ERROR] Fallback triggered: {e}")
-            return "Summary temporarily unavailable."
-
-    def get_serper_info(self, keyword: str):
-        try:
-            hdr = {
-                "X-API-KEY": os.getenv("SERPER_API_KEY"),
-                "Content-Type": "application/json"
-            }
-            resp = requests.post("https://google.serper.dev/search", json={"q": keyword}, headers=hdr)
-            return [{"title": i.get("title"), "link": i.get("link")} for i in resp.json().get("organic", [])][:5]
-        except Exception as e:
-            self.logger.error("Serper error: " + str(e))
-            return []
+            self.logger.error("Match calculation failed: " + str(e))
+            return 0.0
 
     def match_products_across_sites(self, myntra, ajio, nykaa, amazon):
         matched = []
@@ -193,6 +147,34 @@ class MCPClient:
 
         return matched
 
+    def generate_summary(self, keyword: str, myntra: list, ajio: list, nykaa: list, amazon: list) -> str:
+        try:
+            prompt = (
+                f"Compare top products for '{keyword}' from Myntra, AJIO, Nykaa and Amazon.\n"
+                f"Myntra: {[p['name'] for p in myntra]}\n"
+                f"AJIO: {[p['name'] for p in ajio]}\n"
+                f"Nykaa: {[p['name'] for p in nykaa]}\n"
+                f"Amazon: {[p['name'] for p in amazon]}\n"
+                "Summarize the output in 70 words."
+            )
+            result = self.llm.generate(model=self.model, prompt=prompt, stream=False)
+            return result.get("response", "No response.")
+        except Exception as e:
+            self.logger.warning(f"[LLM ERROR] Fallback triggered: {e}")
+            return "Summary temporarily unavailable."
+
+    def get_serper_info(self, keyword: str):
+        try:
+            hdr = {
+                "X-API-KEY": os.getenv("SERPER_API_KEY"),
+                "Content-Type": "application/json"
+            }
+            resp = requests.post("https://google.serper.dev/search", json={"q": keyword}, headers=hdr)
+            return [{"title": i.get("title"), "link": i.get("link")} for i in resp.json().get("organic", [])][:5]
+        except Exception as e:
+            self.logger.error("Serper error: " + str(e))
+            return []
+
     def compare_sites(self, keyword: str) -> dict:
         try:
             start_scrape = time.time()
@@ -204,6 +186,7 @@ class MCPClient:
             ajio = raw.get("ajio", [])
             nykaa = raw.get("nykaa", [])
             amazon = raw.get("amazon", [])
+            self.logger.info(f"Scraped product counts — Myntra: {len(myntra)}, AJIO: {len(ajio)}, Nykaa: {len(nykaa)}, Amazon: {len(amazon)}")
         except Exception as e:
             self.logger.error("Scraping failed: " + str(e))
             myntra = ajio = nykaa = amazon = []
@@ -214,24 +197,13 @@ class MCPClient:
         nykaa_names = [f"{p.get('brand', '')} {p.get('name', '')}".strip() for p in nykaa if p.get("name")]
         amazon_names = [f"{p.get('brand', '')} {p.get('name', '')}".strip() for p in amazon if p.get("name")]
 
-        start_match = time.time()
         myntra_match = self.calculate_match(myntra_names, keyword)
         ajio_match = self.calculate_match(ajio_names, keyword)
         nykaa_match = self.calculate_match(nykaa_names, keyword)
         amazon_match = self.calculate_match(amazon_names, keyword)
-        match_time = round(time.time() - start_match, 2)
-        self.logger.info(f"[TIMER] Match calculation took {match_time}s")
 
-        start_summary = time.time()
         summary = self.generate_summary(keyword, myntra[:3], ajio[:3], nykaa[:3], amazon[:3])
-        summary_time = round(time.time() - start_summary, 1)
-        self.logger.info(f"[TIMER] Summary generation took {summary_time}s")
-
-        start_serper = time.time()
         serper = self.get_serper_info(f"{keyword} site:myntra.com OR site:ajio.com OR site:nykaa.com OR site:amazon.in")
-        serper_time = round(time.time() - start_serper, 2)
-        self.logger.info(f"[TIMER] Serper search took {serper_time}s")
-
         matched = self.match_products_across_sites(myntra, ajio, nykaa, amazon)
 
         return {
@@ -246,10 +218,10 @@ class MCPClient:
             "summary": summary,
             "matched_products": matched,
             "serper_links": serper,
-            "top_myntra": myntra[:5],
-            "top_ajio": ajio[:5],
-            "top_nykaa": nykaa[:5],
-            "top_amazon": amazon[:5]
+            "top_myntra": myntra[:30],
+            "top_ajio": ajio[:30],
+            "top_nykaa": nykaa[:30],
+            "top_amazon": amazon[:30]
         }
 
     async def process_query(self, query: str):
