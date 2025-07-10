@@ -1,14 +1,16 @@
 # Beauty Product Comparator
 
-A simple tool to compare beauty products across Myntra, AJIO, Nykaa, and Amazon. Enter any product name (like "lipstick" or "face wash") and get real-time results, matched items, and AI-generated summaries and suggestions.
+A simple, minimal tool to compare beauty products across Myntra, AJIO, Nykaa, and Amazon. Enter any product name (like "lipstick" or "face wash") and get real-time results, matched items, AI-powered summaries, and suggestions.
 
 ## Features
 
-- Real-time scraping from 4 major e-commerce sites
-- Match percentage and product overlap detection
-- Local LLM-based comparison summaries and related suggestions (via Ollama + Mistral)
-- Wishlist functionality and price filtering
-- Clean, responsive Streamlit UI
+- Compare products across 4 major e-commerce sites (real-time scraping)
+- Wishlist and remove products with login functionality
+- AI-generated product summaries and suggestions using Ollama (Mistral)
+- Google search trend suggestions via Serper API
+- Matched product grouping across websites
+- Simple filters like price range
+- Clean, pastel-themed Streamlit UI with authentication
 
 ## Tech Stack
 
@@ -17,6 +19,8 @@ A simple tool to compare beauty products across Myntra, AJIO, Nykaa, and Amazon.
 - Selenium + BeautifulSoup
 - RapidFuzz
 - Ollama (Mistral)
+- FastAPI (for auth backend)
+- SQLite + SQLAlchemy (user management)
 
 ## Getting Started
 
@@ -31,4 +35,8 @@ pip install -r requirements.txt
 
 ollama run mistral
 
+# Start the backend (FastAPI server)
+python server.py
+
+# In a new terminal, start the Streamlit frontend
 streamlit run streamlit_app.py
