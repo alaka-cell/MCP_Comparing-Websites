@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 from mcp_client import MCPClient
+from auth.routes import router as auth_router  
 import logging
 import asyncio
 
@@ -32,10 +33,10 @@ async def lifespan(app: FastAPI):
     async def warmup_model():
         try:
             logger.info("Warming up Mistral model...")
-            result = client.llm.generate(model="mistral", prompt="hello", stream=False)
-            logger.info("✅ Mistral warm-up completed.")
+            result = client.llm.generate(model="tinyllama", prompt="hello", stream=False)
+            logger.info("tinyllama warm-up completed.")
         except Exception as e:
-            logger.warning(f"Mistral warm-up skipped or failed: {e}")
+            logger.warning(f"tinyllama warm-up skipped or failed: {e}")
 
     await warmup_model()
 
@@ -54,6 +55,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 
 class CompareRequest(BaseModel):
     keyword: str
