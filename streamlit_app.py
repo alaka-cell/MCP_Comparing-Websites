@@ -14,6 +14,16 @@ from requests.exceptions import RequestException
 st.set_page_config(page_title="Product Comparator", layout="wide")
 load_dotenv()
 
+# 🧼 Hide default Streamlit sidebar page selector
+st.markdown("""
+    <style>
+    [data-testid="stSidebarNav"] {
+        display: none;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 st.markdown("""
     <style>
     body, .main, .block-container {
@@ -75,14 +85,137 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-FLASK_API_URL = os.getenv("FLASK_API_URL", "http://localhost:5000")
+# 🌐 ENV + Auth State
+FLASK_API_URL = os.getenv("FLASK_API_URL")
 auth = {"logged_in": False, "username": None, "role": None}
 
-# Helper Functions
+# 🍪 Check session
+try:
+    resp = requests.get(
+        f"{FLASK_API_URL}/auth/check_session",
+        cookies=dict(st.session_state.get("cookies", {}))
+    )
+    if resp.ok:
+        auth.update(resp.json())
+except Exception as e:
+    logger.warning(f"Auth check failed: {e}")
 
+# 🚫 Admin Redirect
+if auth["logged_in"] and auth["role"] == "admin":
+    st.switch_page("pages/admin_app.py")
+    st.stop()
+
+import streamlit.components.v1 as components
+
+components.html("""
+<style>
+.drawer-button {
+    position: fixed;
+    top: 70px;
+    left: 20px;
+    z-index: 1001;
+    background-color: #FEC8D8;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 16px;
+    color: #4B2C3A;
+    cursor: pointer;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+}
+
+.drawer-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.3);
+    z-index: 1000;
+    display: none;
+}
+
+.drawer {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    height: 100%;
+    width: 260px;
+    background-color: #fff0f5;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.15);
+    z-index: 1001;
+    padding: 20px;
+    transition: left 0.3s ease;
+    border-radius: 0 12px 12px 0;
+}
+
+.drawer.open {
+    left: 0;
+}
+
+.drawer h4 {
+    margin-top: 0;
+    color: #D16BA5;
+}
+
+.drawer ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.drawer ul li {
+    margin: 16px 0;
+}
+
+.drawer a {
+    text-decoration: none;
+    color: #D16BA5;
+    font-size: 16px;
+}
+.drawer a:hover {
+    text-decoration: underline;
+    color: #b84d94;
+}
+</style>
+
+<div class="drawer-overlay" id="drawer-overlay" onclick="toggleDrawer()"></div>
+
+<div class="drawer" id="drawer">
+  <h4>Menu</h4>
+  <ul>
+    <li><a href="#home">Home</a></li>
+    <li><a href="#wishlist">Wishlist</a></li>
+    <li><a href="#admin">🛠 Admin Dashboard</a></li>
+    <li><a href="#logout">Logout</a></li>
+  </ul>
+</div>
+
+<button class="drawer-button" onclick="toggleDrawer()">☰ Menu</button>
+
+<script>
+function toggleDrawer() {
+    const drawer = window.parent.document.getElementById("drawer");
+    const overlay = window.parent.document.getElementById("drawer-overlay");
+    const isOpen = drawer.classList.contains("open");
+    if (isOpen) {
+        drawer.classList.remove("open");
+        overlay.style.display = "none";
+    } else {
+        drawer.classList.add("open");
+        overlay.style.display = "block";
+    }
+}
+</script>
+""", height=0)
+
+# 🔐 Auth Functions
 def login_user(username, password, role):
     try:
-        res = requests.post(f"{FLASK_API_URL}/auth/login", json={"username": username, "password": password, "role": role})
+        res = requests.post(
+            f"{FLASK_API_URL}/auth/login",
+            json={"username": username, "password": password, "role": role}
+        )
         if res.ok:
             st.session_state["cookies"] = res.cookies.get_dict()
             st.success("Login successful. Please rerun the app.")
@@ -94,7 +227,10 @@ def login_user(username, password, role):
 
 def register_user(username, password, role):
     try:
-        res = requests.post(f"{FLASK_API_URL}/auth/register", json={"username": username, "password": password, "role": role})
+        res = requests.post(
+            f"{FLASK_API_URL}/auth/register",
+            json={"username": username, "password": password, "role": role}
+        )
         if res.ok:
             st.success("Registration successful! Please log in below.")
             st.session_state.show_login = True
@@ -103,17 +239,23 @@ def register_user(username, password, role):
     except RequestException as e:
         st.error(f"Registration error: {e}")
 
-try:
-    resp = requests.get(f"{FLASK_API_URL}/auth/check_session", cookies=dict(st.session_state.get("cookies", {})))
-    if resp.ok:
-        auth_data = resp.json()
-        auth.update(auth_data)
-except Exception as e:
-    logger.warning(f"Auth check failed: {e}")
+st.markdown('<a name="admin"></a>', unsafe_allow_html=True)
 
 if auth["logged_in"]:
+    with st.sidebar.expander("Menu", expanded=False):
+        selection = st.radio("Go to", ["Home", "Admin Dashboard"], label_visibility="collapsed")
+
+        if selection == "Admin Dashboard":
+            if auth["role"] == "admin":
+                st.switch_page("pages/admin_app.py")
+            else:
+                st.warning("Access denied: Admins only.")
+
+    st.markdown('<a name="wishlist"></a>', unsafe_allow_html=True)
+
     with st.sidebar.expander("My Wishlist", expanded=True):
-        wishlist = load_wishlist()
+
+        wishlist = load_wishlist(auth["username"])
         if wishlist:
             for item in wishlist:
                 unique_key = "remove_" + hashlib.md5(item['link'].encode()).hexdigest()
@@ -121,29 +263,36 @@ if auth["logged_in"]:
                     col1, col2 = st.columns([8, 1])
                     with col1:
                         st.markdown(f"""
-                        <div style="margin-top:5px">
-                            <a href="{item['link']}" target="_blank">
-                                <strong>{item['name']}</strong>
-                            </a><br>
-                            {item['price']}
-                        </div>
+                            <div style="margin-top:5px">
+                                <a href="{item['link']}" target="_blank">
+                                    <strong>{item['name']}</strong>
+                                </a><br>
+                                {item['price']}
+                            </div>
                         """, unsafe_allow_html=True)
                     with col2:
                         if st.button("X", key=unique_key):
-                            remove_from_wishlist(item['link'])
+                            remove_from_wishlist(item['link'], auth["username"])
                             st.rerun()
         else:
             st.info("No items wishlisted yet.")
 
         st.markdown("---")
-        st.markdown("**Compare Two Products**")
+        if st.button("Logout", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.success("Logged out successfully.")
+            st.rerun()
 
+        # Compare Tool
+        st.markdown("---")
+        st.markdown("**Compare Two Products**")
         if "stored_result" in st.session_state and st.session_state.stored_result:
             all_products = []
             for source in ["top_myntra", "top_ajio", "top_nykaa", "top_amazon"]:
                 all_products.extend(st.session_state.stored_result.get(source, []))
 
-            product_names = sorted({p.get("name", "").strip() for p in all_products if p.get("name") and len(p.get("name", "").strip()) > 1})
+            product_names = sorted({p.get("name", "").strip() for p in all_products if p.get("name")})
 
             if len(product_names) >= 2:
                 col1, col2 = st.columns(2)
@@ -156,53 +305,69 @@ if auth["logged_in"]:
                     if selected_1 != selected_2:
                         with st.spinner("Generating comparison..."):
                             try:
-                                comparison_response = compare_products(selected_1, selected_2)
+                                response = compare_products(selected_1, selected_2)
                                 st.markdown("----")
-                                st.markdown(f"<div style='margin-bottom:8px;'><strong>You:</strong> Compare *{selected_1}* and *{selected_2}*</div>", unsafe_allow_html=True)
-                                st.markdown(f"<div style='background-color:#fff0f5; padding:12px; border-radius:10px;'><strong>AI:</strong> {comparison_response}</div>", unsafe_allow_html=True)
+                                st.markdown(f"<strong>You:</strong> Compare *{selected_1}* and *{selected_2}*", unsafe_allow_html=True)
+                                st.markdown(f"<div style='background-color:#fff0f5; padding:12px; border-radius:10px;'><strong>AI:</strong> {response}</div>", unsafe_allow_html=True)
                             except Exception as e:
-                                st.warning("Failed to generate comparison.")
-                                logger.error("Compare products error: " + str(e))
+                                logger.error("Compare error: " + str(e))
+                                st.warning("Comparison failed.")
                     else:
-                        st.warning("Please choose two different products.")
+                        st.warning("Choose two different products.")
             else:
-                st.info("At least two named products are required for comparison.")
+                st.info("Need at least two products to compare.")
         else:
-            st.info("Run a product search first to enable comparison.")
+            st.info("Search first to use comparison.")
 else:
-    with st.sidebar:
-        if "show_login" not in st.session_state:
-            st.session_state.show_login = False
+    if "show_login" not in st.session_state:
+        st.session_state.show_login = True
+    if "show_admin_login" not in st.session_state:
+        st.session_state.show_admin_login = False
 
-        if st.session_state.show_login:
-            st.subheader("Login")
+    with st.sidebar:
+        if st.session_state.show_admin_login:
+            st.subheader("Admin Login")
+            username = st.text_input("Admin Username", key="admin_user")
+            password = st.text_input("Admin Password", type="password", key="admin_pass")
+            if st.button("Login as Admin"):
+                login_user(username, password, "admin")
+
+            if st.button("← Back to User Login"):
+                st.session_state.show_admin_login = False
+                st.session_state.show_login = True
+                st.rerun()
+
+        elif st.session_state.show_login:
+            st.subheader("User Login")
             login_user_input = st.text_input("Username", key="login_user")
             login_pass_input = st.text_input("Password", type="password", key="login_pass")
-            login_role = st.selectbox("Login as", ["user", "admin"], key="login_role")
             if st.button("Login"):
-                login_user(login_user_input, login_pass_input, login_role)
+                login_user(login_user_input, login_pass_input, "user")
 
-            with st.container():
-                st.markdown("<div class='pink-link'>", unsafe_allow_html=True)
-                if st.button("New user? Register here", key="switch_to_register"):
-                    st.session_state.show_login = False
-                st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("New user? Register here"):
+                st.session_state.show_login = False
+
+            if st.button("Login as Admin"):
+                st.session_state.show_login = False
+                st.session_state.show_admin_login = True
+                st.rerun()
+
         else:
             st.subheader("Register")
             register_user_input = st.text_input("New Username", key="reg_user")
             register_pass_input = st.text_input("New Password", type="password", key="reg_pass")
-            register_role = st.selectbox("Register as", ["user", "admin"], key="reg_role")
             if st.button("Register"):
-                register_user(register_user_input, register_pass_input, register_role)
+                register_user(register_user_input, register_pass_input, "user")
 
-            with st.container():
-                st.markdown("<div class='pink-link'>", unsafe_allow_html=True)
-                if st.button("Already registered? Login here", key="switch_to_login"):
-                    st.session_state.show_login = True
-                st.markdown("</div>", unsafe_allow_html=True)
+            if st.button("Already registered? Login here"):
+                st.session_state.show_login = True
 
- # 🎀 Main Title & Fortune Caption
-st.title("Product Comparator")
+            if st.button("Login as Admin"):
+                st.session_state.show_admin_login = True
+                st.session_state.show_login = False
+                st.rerun()
+
+# 🎀 Main Title & Fortune Caption - Redesigned
 FORTUNES = [
     "Your perfect shade is just a click away!",
     "One swipe could change your look forever!",
@@ -213,7 +378,20 @@ FORTUNES = [
     "Find your holy grail product today!",
     "Slay the day with your next beauty buy!"
 ]
-st.caption(random.choice(FORTUNES))
+
+fortune = random.choice(FORTUNES)
+
+with st.container():
+    st.markdown(
+        f"""
+        <div style="text-align:center; padding: 30px 0;">
+            <h1 style="font-size: 48px; color: #D16BA5; margin-bottom: 8px;">Product Comparator</h1>
+            <p style="font-size: 20px; color: #7A4F66;">{fortune}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+st.markdown('<a name="home"></a>', unsafe_allow_html=True)
 
 # 🎛️ Initialize MCPClient and result cache
 if "client" not in st.session_state:
@@ -224,9 +402,30 @@ if "stored_result" not in st.session_state:
 query_params = st.query_params
 if "q" in query_params:
     st.session_state.input_query = query_params["q"]
+ 
 
-query = st.text_input("Search for a product", key="input_query")
-search = st.button("Compare")
+with st.container():
+    st.markdown(
+        "<h3 style='text-align:center; color:#D16BA5;'> Search for a product</h3>",
+        unsafe_allow_html=True
+    )
+
+    query = st.text_input(
+        "",
+        key="input_query",
+        placeholder="e.g. Maybelline Lipstick",
+        label_visibility="collapsed"
+    )
+
+    if st.button("Compare", key="compare-button", use_container_width=True):
+        search = True
+    else:
+        search = False
+
+#Hidden input field linked to Streamlit
+#query = st.text_input("Query", key="input_query", label_visibility="collapsed")
+#search = st.button("Compare", key="compare-button")
+
 cleaned_query = query.strip()
 
 def clean_price(p):
@@ -248,7 +447,7 @@ def show_product_grid(products, title, price_range):
         st.info(f"No products to display for {title}.")
         return
 
-    wishlist_links = {item['link'] for item in load_wishlist()}
+    wishlist_links = {item['link'] for item in load_wishlist(auth["username"])}
     st.markdown(f"### {title}")
     cols = st.columns(min(5, len(products)))
 
@@ -272,9 +471,9 @@ def show_product_grid(products, title, price_range):
             if auth["logged_in"]:
                 if st.button("Remove from Wishlist" if is_wishlisted else "Add to Wishlist", key=link_key, use_container_width=True):
                     if is_wishlisted:
-                        remove_from_wishlist(p['link'])
+                        remove_from_wishlist(p['link'], auth["username"])
                     else:
-                        add_to_wishlist(p)
+                        add_to_wishlist(p, auth["username"])
                         st.success("Saved to wishlist!")
                     st.rerun()
             else:
@@ -324,7 +523,7 @@ if st.session_state.stored_result:
     st.markdown("### Matched Products Across Sites")
     matched = res.get("matched_products", [])
     if matched:
-        wishlist_links = {item['link'] for item in load_wishlist()}
+        wishlist_links = {item['link'] for item in load_wishlist(auth["username"])}
         for i, group in enumerate(matched):
             cols = st.columns(4)
             for idx, site in enumerate(["myntra", "ajio", "nykaa", "amazon"]):
@@ -345,9 +544,9 @@ if st.session_state.stored_result:
                         if auth["logged_in"]:
                             if st.button("Remove from Wishlist" if is_wishlisted else "Add to Wishlist", key=link_key, use_container_width=True):
                                 if is_wishlisted:
-                                    remove_from_wishlist(product['link'])
+                                    remove_from_wishlist(product['link'], auth["username"])
                                 else:
-                                    add_to_wishlist(product)
+                                    add_to_wishlist(product, auth["username"])
                                     st.success("Saved to wishlist!")
                                 st.rerun()
                         else:
