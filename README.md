@@ -1,6 +1,8 @@
-# 🌸 GLAM — Beauty Price Comparator
+#  Your dress-up darling — Beauty Price Comparator
 
-A real-time beauty product price comparison tool that scrapes Myntra, Flipkart, Nykaa, and Amazon. Search for any product, compare prices side-by-side, get AI-powered summaries, and save favourites to your wishlist.
+GLAM is a real-time beauty product price comparison tool built for shoppers who want to make smarter purchasing decisions without jumping between tabs. It scrapes live product listings from Myntra, Flipkart, Nykaa, and Amazon simultaneously, then presents results in a clean, unified interface — complete with product images, prices, brand tags, and direct links. Products that appear across multiple platforms are automatically grouped using fuzzy matching, so you can instantly see where a specific item is cheapest. A local Ollama (Mistral) model generates human-readable summaries of the search results and powers a side-by-side AI comparison of any two products, while Serper pulls in real-time Google trending searches to help users discover what's popular right now.
+
+Beyond search, GLAM is a fully functional web app with user authentication, role-based access, and persistent wishlists. Shoppers can register an account, log in, and save any product directly from the results grid — their wishlist lives in the sidebar for quick reference at all times. Admins get a dedicated dashboard with elevated access. The app is built on Streamlit for the frontend, Flask for the auth backend, and SQLite for data persistence, making it lightweight and easy to run locally on Windows without any containerisation. The scraping layer uses Selenium with undetected-chromedriver to handle JavaScript-heavy e-commerce pages, with BeautifulSoup handling the HTML parsing and a dedicated debug tool for maintaining selectors when sites update their structure.
 
 ---
 
