@@ -160,4 +160,4 @@ Pull requests welcome. For major changes, open an issue first to discuss what yo
 
 ---
 
-*Made with care ♥ — GLAM Beauty Price Comparator*
+*Made with care ♥ — YDUD Beauty Price Comparator*
