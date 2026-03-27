@@ -33,3 +33,16 @@ def generate_comparison_summary(matched_products: list, model: str = "mistral") 
     except Exception as e:
         print("Ollama error (comparison):", e)
         return "AI comparison could not be generated."
+def compare_products(product1: str, product2: str, model: str = "mistral") -> str:
+    client = Client()
+    prompt = f"""
+    You are an expert beauty advisor.
+    Compare these two products: "{product1}" and "{product2}".
+    Give a brief qualitative comparison in 2-3 sentences as if advising a user.
+    """
+    try:
+        response = client.chat(model=model, messages=[{"role": "user", "content": prompt}])
+        return response["message"]["content"].strip()
+    except Exception as e:
+        print("Ollama error (compare_products):", e)
+        return "AI comparison could not be generated."

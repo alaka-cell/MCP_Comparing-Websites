@@ -1,32 +1,108 @@
-# models.py
-from sqlalchemy import Column, String, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from .utils import hash_password
+import sqlite3
+import logging
+from datetime import datetime
+from .utils import hash_password, verify_password
+import os
 
-DATABASE_URL = "sqlite:///auth/users.db"
+logger = logging.getLogger(__name__)
 
-Base = declarative_base()
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-Session = sessionmaker(bind=engine)
+DB_PATH = os.getenv("DATABASE_URL", "auth.db")
 
-class User(Base):
-    __tablename__ = "users"
-    username = Column(String, primary_key=True)
-    password = Column(String)
-    role = Column(String)
 
-Base.metadata.create_all(engine)
+def get_db_connection():
+    """Get a connection to the SQLite database"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def register_user(username, password, role="user"):
-    session = Session()
-    if session.query(User).filter_by(username=username).first():
-        return {"success": False, "message": "User already exists."}
-    user = User(username=username, password=hash_password(password), role=role)
-    session.add(user)
-    session.commit()
-    return {"success": True, "message": "User registered successfully."}
 
-def get_user_by_username(username):
-    session = Session()
-    return session.query(User).filter_by(username=username).first()
+def init_db():
+    """Initialize the database with the users table"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing database: {str(e)}", exc_info=True)
+        raise
+
+
+def register_user(username: str, password: str, role: str = 'user') -> dict:
+    """
+    Register a new user.
+    Returns a dict with 'success' and 'message' keys.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if user already exists
+        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+        if cursor.fetchone():
+            conn.close()
+            return {"success": False, "message": "Username already exists"}
+        
+        # Hash password and create user
+        hashed_pw = hash_password(password)
+        cursor.execute(
+            'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
+            (username, hashed_pw, role)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"User registered successfully: {username}")
+        return {"success": True, "message": "User registered successfully"}
+    
+    except Exception as e:
+        logger.error(f"Error registering user {username}: {str(e)}", exc_info=True)
+        return {"success": False, "message": f"Registration failed: {str(e)}"}
+
+
+def get_user_by_username(username: str):
+    """
+    Retrieve a user by username.
+    Returns dict with user data or None.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            return dict(user)
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching user {username}: {str(e)}", exc_info=True)
+        return None
+
+
+def authenticate_user(username: str, password: str):
+    """
+    Authenticate a user by username and password.
+    Returns user dict if valid, None otherwise.
+    """
+    try:
+        user = get_user_by_username(username)
+        if user and verify_password(password, user['password']):
+            return user
+        return None
+    except Exception as e:
+        logger.error(f"Error authenticating user {username}: {str(e)}", exc_info=True)
+        return None

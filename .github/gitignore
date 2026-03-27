@@ -1,0 +1,62 @@
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# ── Virtual environments ──────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+
+# ── Environment / secrets ─────────────────────────────────────
+.env
+*.env
+!.env.example        # Keep the example file — it has no real secrets
+
+# ── Sensitive source files ────────────────────────────────────
+tools/scraper.py     # Contains site-specific scraping logic & selectors
+
+# ── Databases ─────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Wishlists (user data) ─────────────────────────────────────
+wishlists/
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── OS / editor ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── pytest / coverage ─────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ── Streamlit ─────────────────────────────────────────────────
+.streamlit/secrets.toml
